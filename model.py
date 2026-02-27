@@ -37,7 +37,7 @@ class VLMModel(torch.nn.Module):
             attn_implementation="sdpa",
             low_cpu_mem_usage=True
         )
-        # 【关键修复】调整 LLM 的 Embedding 层大小以匹配新增的 <image> token
+
         self.language_model.resize_token_embeddings(len(self.tokenizer))
 
         self.vision_encoder = CLIPVisionModel.from_pretrained(
@@ -49,7 +49,6 @@ class VLMModel(torch.nn.Module):
 
         self.llm_hidden_dim = self.language_model.config.hidden_size
         
-        # Projector 结构保持不变
         self.projector = torch.nn.Sequential(
             torch.nn.Linear(768, 2048),
             torch.nn.LayerNorm(2048),
@@ -58,7 +57,6 @@ class VLMModel(torch.nn.Module):
             torch.nn.LayerNorm(self.llm_hidden_dim)
         ).to(dtype=target_dtype, device=self.device)
 
-        # 初始化 Projector
         def init_weights(m):
             if isinstance(m, torch.nn.Linear):
                 torch.nn.init.normal_(m.weight, std=0.02)
@@ -69,13 +67,11 @@ class VLMModel(torch.nn.Module):
         if projector_params is not None:
             self.projector.load_state_dict(projector_params)
         
-        # 冻结 LLM 和 Vision Encoder
         for param in self.language_model.parameters():
             param.requires_grad = False
         for param in self.vision_encoder.parameters():
             param.requires_grad = False
         
-        # Projector 在两种模式下都训练
         for param in self.projector.parameters():
             param.requires_grad = True
     
@@ -92,10 +88,9 @@ class VLMModel(torch.nn.Module):
             bias="none",
             task_type="CAUSAL_LM"
         )
-        # 在原始 language_model 上包装 LoRA 层
+
         self.language_model = get_peft_model(self.language_model, lora_config)
         if lora_params is not None:
-            # 将 LoRA 参数移动到目标设备
             if device is not None:
                 lora_params = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in lora_params.items()}
             self.language_model.load_state_dict(lora_params, strict=False)
@@ -112,19 +107,16 @@ class VLMModel(torch.nn.Module):
         new_labels = []
 
         for i in range(batch_size):
-            # 【关键修复】直接通过 ID 寻找 <image> 占位符的位置
             image_token_mask = (input_ids[i] == self.image_token_id)
             indices = torch.where(image_token_mask)[0]
 
-            # 如果image标签没有找到，要打印出来看看，明显一点的错误
             if len(indices) == 0:
-                #先打印Image token的id
                 print(f"Image token id: {self.image_token_id}")
-                # 再打印当前的input_ids
+                # 打印当前的input_ids
                 print(f"Current input_ids: {input_ids[i]}")
-                # 再打印当前的input_ids中image token的位置
+                # 打印当前的input_ids中image token的位置
                 print(f"Image token indices: {indices}")
-                # 再打印当前的input_ids中image token的位置
+                # 打印当前的input_ids中image token的位置
                 print(f"Warning: No <image> token found in input_ids ❌[{i}]")
 
             if len(indices) == 0:
@@ -137,7 +129,6 @@ class VLMModel(torch.nn.Module):
                 idx = indices[0]
 
                 # 拼接：前文本 + 图像特征 + 后文本
-                # 注意：这里完全跳过了原有的 <image> token embedding
                 cur_embeds = torch.cat([
                     inputs_embeds[i, :idx, :],
                     image_features[i],
@@ -170,7 +161,7 @@ class VLMModel(torch.nn.Module):
             if labels is not None:
                 final_labels[i, :cur_len] = new_labels[i]
 
-        # --- 临时调试代码修正版 ---
+        # --- 临时调试代码修正 ---
         if labels is not None and torch.rand(1).item() < 0.05:
             # 1. 正常的 Forward 已经拿到了 logits
             # 这里的 logits 维度是 [B, N, Vocabulary_Size]
@@ -203,21 +194,9 @@ class VLMModel(torch.nn.Module):
                     print(f"【Step 调试采样】")
                     print(f"预测文本 >> {pred_str}")
                     print(f"实际文本 >> {target_str}")
-
-                    # 额外检查：对比前 5 个 token 的 ID 是否一致（直观判断对齐）
-                    # print(f"前5个Token ID对比: \nPred: {p_tokens[:5].tolist()}\nTarget: {t_tokens[:5].tolist()}")
                     break
             print("="*50 + "\n")
             return output
-            # print("------------------")
-            # print("image token id:", self.image_token_id)
-            # print(f"预测 ID 前 10 个: {pred_tokens[:10].tolist()}")
-            # print(f"实际 ID 前 10 个: {target_tokens[:10].tolist()}")
-            # exit(-1)
-
-            # 3. 检查图像特征的强度
-            # print(f"Image Features Mean Abs: {image_features.abs().mean().item()}")
-            # ------------------
 
         return self.language_model(
             inputs_embeds=final_embeds,
@@ -228,8 +207,7 @@ class VLMModel(torch.nn.Module):
     @torch.no_grad()
     def answer(self, image: Image.Image, prompt: str, max_new_tokens=128):
         self.eval()
-        # 1. 严格对齐 Qwen 的 ChatML 格式
-        # 必须让模型觉得 Assistant 准备开口了        
+        # 1. 严格对齐 Qwen 的 ChatML 格式    
         inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
         input_ids = inputs['input_ids'].to(self.device)
         
@@ -254,13 +232,13 @@ class VLMModel(torch.nn.Module):
         ], dim=1)
 
         bad_ids = self.tokenizer.encode("] /", add_special_tokens=False)        # 5. 生成
-        # 注意：这里我们只传 inputs_embeds，不传 input_ids
+
         output_ids = self.language_model.generate(
             inputs_embeds=combined_embeds,
             max_new_tokens=max_new_tokens,
-            do_sample=False,            # Greedy search 比较稳
-            repetition_penalty=1.2,     # 稍微加大惩罚，防止口吃
-            begin_suppress_tokens=bad_ids,  # 强行禁止开场白出现这些脏数据
+            do_sample=False,            
+            repetition_penalty=1.2,    
+            begin_suppress_tokens=bad_ids, 
             eos_token_id=self.tokenizer.convert_tokens_to_ids("<|im_end|>"), # 明确结束符
             pad_token_id=self.tokenizer.pad_token_id
         )
