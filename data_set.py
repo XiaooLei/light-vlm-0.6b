@@ -767,34 +767,51 @@ class BalancedSampler(Sampler):
     """
     平衡采样器，用于均衡 yes/no 样本的采样
     
-    在训练时，no 样本重复 5 次，yes 和其他样本保持不变
+    在训练时，no 样本重复 6 次，yes 和其他样本保持不变
     """
     
-    def __init__(self, dataset: LLaVADataset, seed: int = 42):
+    def __init__(self, dataset: LLaVADataset, seed: int = 42, no_repeat_times: int = 6):
         """
         初始化平衡采样器
         
         Args:
             dataset: LLaVADataset 数据集
             seed: 随机种子
+            no_repeat_times: no 样本重复次数
         """
         self.dataset = dataset
         self.seed = seed
         random.seed(seed)
+
+        self.no_repeat_times = no_repeat_times
         
         # 分类样本索引
         self.yes_indices = []
         self.no_indices = []
         self.other_indices = []
         
-        # 正则表达式模式
+        # 正则表达式模式（更精确的匹配）
         self.yes_no_patterns = [
             r'\b(is|are|was|were|do|does|did|can|could|will|would|should|may|might|must|has|have|had)\b.*\?',
             r'\b(Is|Are|Was|Were|Do|Does|Did|Can|Could|Will|Would|Should|May|Might|Must|Has|Have|Had)\b.*\?',
         ]
-        self.yes_keywords = [r'\byes\b', r'\bYes\b', r'\bYES\b', r'\byeah\b', r'\bYeah\b', r'\byup\b', r'\bYup\b', r'\bcorrect\b', r'\bCorrect\b', r'\bright\b', r'\bRight\b', r'\btrue\b', r'\bTrue\b']
-        self.no_keywords = [r'\bno\b', r'\bNo\b', r'\bNO\b', r'\bnah\b', r'\bNah\b', r'\bnope\b', r'\bNope\b', r'\bincorrect\b', r'\bIncorrect\b', r'\bwrong\b', r'\bWrong\b', r'\bfalse\b', r'\bFalse\b']
-        
+        # 使用更精确的单词边界匹配
+        self.yes_keywords = [
+            r'^yes\b', r'^yes\s', r'\syes\s', r'\syes$', r'^yes$',
+            r'^yeah\b', r'^yeah\s', r'\syeah\s', r'\syeah$', r'^yeah$',
+            r'^yup\b', r'^yup\s', r'\syup\s', r'\syup$', r'^yup$',
+            r'^correct\b', r'^correct\s', r'\scorrect\s', r'\scorrect$', r'^correct$',
+            r'^right\b', r'^right\s', r'\sright\s', r'\sright$', r'^right$',
+            r'^true\b', r'^true\s', r'\strue\s', r'\strue$', r'^true$'
+        ]
+        self.no_keywords = [
+            r'^no\b', r'^no\s', r'\sno\s', r'\sno$', r'^no$',
+            r'^nah\b', r'^nah\s', r'\snah\s', r'\snah$', r'^nah$',
+            r'^nope\b', r'^nope\s', r'\snope\s', r'\snope$', r'^nope$',
+            r'^incorrect\b', r'^incorrect\s', r'\sincorrect\s', r'\sincorrect$', r'^incorrect$',
+            r'^wrong\b', r'^wrong\s', r'\swrong\s', r'\swrong$', r'^wrong$',
+            r'^false\b', r'^false\s', r'\sfalse\s', r'\sfalse$', r'^false$'
+        ]
         # 分析数据集
         self._analyze_dataset()
     
@@ -822,10 +839,11 @@ class BalancedSampler(Sampler):
                 if is_question:
                     answer_lower = assistant_msg.lower().strip()
                     
-                    if any(re.search(kw, answer_lower) for kw in self.yes_keywords):
+                    # 使用更精确的匹配逻辑
+                    if self._is_yes_answer(answer_lower):
                         self.yes_indices.append(idx)
                         break
-                    elif any(re.search(kw, answer_lower) for kw in self.no_keywords):
+                    elif self._is_no_answer(answer_lower):
                         self.no_indices.append(idx)
                         break
             else:
@@ -834,18 +852,43 @@ class BalancedSampler(Sampler):
         
         logger.info(f"数据集分析完成:")
         logger.info(f"  Yes 样本: {len(self.yes_indices)}")
-        logger.info(f"  No 样本: {len(self.no_indices)} (将重复5倍)")
+        logger.info(f"  No 样本: {len(self.no_indices)} (将重复{self.no_repeat_times}倍)")
         logger.info(f"  其他样本: {len(self.other_indices)}")
+        
+        # 计算平衡后的比例
+        balanced_yes = len(self.yes_indices)
+        balanced_no = len(self.no_indices) * self.no_repeat_times
+        total_balanced = balanced_yes + balanced_no + len(self.other_indices)
+        
+        logger.info(f"平衡后分布:")
+        logger.info(f"  Yes 样本: {balanced_yes} ({balanced_yes/total_balanced*100:.2f}%)")
+        logger.info(f"  No 样本: {balanced_no} ({balanced_no/total_balanced*100:.2f}%)")
+        logger.info(f"  其他样本: {len(self.other_indices)} ({len(self.other_indices)/total_balanced*100:.2f}%)")
+        logger.info(f"  Yes:No 比例: {balanced_yes}:{balanced_no} ({balanced_yes/balanced_no if balanced_no > 0 else float('inf'):.2f}:1)")
         
         # 打乱索引
         random.shuffle(self.yes_indices)
         random.shuffle(self.no_indices)
         random.shuffle(self.other_indices)
     
+    def _is_yes_answer(self, answer: str) -> bool:
+        """判断回答是否为 yes 类型"""
+        for pattern in self.yes_keywords:
+            if re.search(pattern, answer, re.IGNORECASE):
+                return True
+        return False
+    
+    def _is_no_answer(self, answer: str) -> bool:
+        """判断回答是否为 no 类型"""
+        for pattern in self.no_keywords:
+            if re.search(pattern, answer, re.IGNORECASE):
+                return True
+        return False
+    
     def __iter__(self):
         """生成采样索引"""
-        # no 样本重复 5 次
-        repeated_no = self.no_indices * 5
+        # no 样本重复 6 次
+        repeated_no = self.no_indices * 6
         
         # 合并所有样本
         all_indices = self.yes_indices + repeated_no + self.other_indices
@@ -898,6 +941,54 @@ def create_balanced_dataloader(dataset: LLaVADataset, batch_size: int = 2,
             pin_memory=True
         )
     return dataloader
+
+
+# 检查一下这个数据集，是否平衡了 yes/no 样本
+def analyze_yes_no_bias(sample_size: int = 10000):
+    """分析数据集是否平衡了 yes/no 样本"""
+    logger.info("Loading datasets...")
+    train_dataset = LLaVADataset(sample_size=sample_size)
+    train_dataset.load()
+    train_dataset.ensure_sample_data_exists()
+    
+    # 创建 BalancedSampler 并分析其内部的样本分布
+    sampler = BalancedSampler(train_dataset)
+    
+    # 计算平衡后的分布
+    original_yes = len(sampler.yes_indices)
+    original_no = len(sampler.no_indices)
+    original_other = len(sampler.other_indices)
+    
+    # 平衡后的数量（no 样本重复 5 次）
+    balanced_yes = original_yes
+    balanced_no = original_no * 5
+    balanced_other = original_other
+    total_balanced = balanced_yes + balanced_no + balanced_other
+    
+    logger.info(f"数据集分析结果:")
+    logger.info(f"原始分布:")
+    logger.info(f"  Yes 样本: {original_yes} ({original_yes/(original_yes+original_no+original_other)*100:.2f}%)")
+    logger.info(f"  No 样本: {original_no} ({original_no/(original_yes+original_no+original_other)*100:.2f}%)")
+    logger.info(f"  其他样本: {original_other} ({original_other/(original_yes+original_no+original_other)*100:.2f}%)")
+    logger.info(f"  总计: {original_yes+original_no+original_other}")
+    
+    logger.info(f"\n平衡后分布 (No 样本重复 5 次):")
+    logger.info(f"  Yes 样本: {balanced_yes} ({balanced_yes/total_balanced*100:.2f}%)")
+    logger.info(f"  No 样本: {balanced_no} ({balanced_no/total_balanced*100:.2f}%)")
+    logger.info(f"  其他样本: {balanced_other} ({balanced_other/total_balanced*100:.2f}%)")
+    logger.info(f"  总计: {total_balanced}")
+    
+    logger.info(f"\nYes:No 比例:")
+    logger.info(f"  原始比例: {original_yes}:{original_no} ({original_yes/original_no if original_no > 0 else float('inf'):.2f}:1)")
+    logger.info(f"  平衡后比例: {balanced_yes}:{balanced_no} ({balanced_yes/balanced_no if balanced_no > 0 else float('inf'):.2f}:1)")
+    
+    # 检查是否达到平衡
+    if abs(balanced_yes - balanced_no) < balanced_yes * 0.1:
+        logger.info("✅ 数据集已经达到了较好的平衡状态")
+    else:
+        logger.info("⚠️  数据集仍需要进一步平衡")
+
+
 
 
 

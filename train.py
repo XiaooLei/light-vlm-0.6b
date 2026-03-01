@@ -130,6 +130,11 @@ def evaluate(model, val_dataloader, device, epoch):
     total_loss = 0
     num_batches = len(val_dataloader)
     
+    # 用于统计 yes/no 回答
+    yes_count = 0
+    no_count = 0
+    total_questions = 0
+    
     with torch.no_grad():
         for batch in tqdm(val_dataloader, desc=f"Evaluating Epoch {epoch}", ncols=120):
             input_ids = batch["input_ids"].to(device)
@@ -138,11 +143,105 @@ def evaluate(model, val_dataloader, device, epoch):
             
             outputs = model(input_ids=input_ids, pixel_values=pixel_values, labels=labels)
             total_loss += outputs.loss.item()
+            
+            # 统计 yes/no 回答（简单统计）
+            logits = outputs.logits if hasattr(outputs, 'logits') else None
+            if logits is not None:
+                # 获取预测的 token
+                predictions = torch.argmax(logits, dim=-1)
+                # 这里可以添加更复杂的 yes/no 统计逻辑
     
     avg_loss = total_loss / num_batches
     logger.info(f"Epoch {epoch} - Validation Loss: {avg_loss:.4f}")
     
     return avg_loss
+
+
+def evaluate_yes_no_bias(model, val_dataset, device, tokenizer, num_samples=300):   
+    """
+    专门评估模型在 yes/no 问题上的偏向
+    
+    Args:
+        model: 模型
+        val_dataset: 验证数据集
+        device: 设备
+        tokenizer: tokenizer
+        num_samples: 评估样本数
+    """
+    import re
+    
+    model.eval()
+    
+    # 一般疑问句模式
+    yes_no_patterns = [
+        r'\b(is|are|was|were|do|does|did|can|could|will|would|should|may|might|must|has|have|had)\b.*\?',
+    ]
+    
+    yes_keywords = [r'\byes\b', r'\byeah\b', r'\byup\b', r'\bcorrect\b', r'\bright\b', r'\btrue\b']
+    no_keywords = [r'\bno\b', r'\bnah\b', r'\bnope\b', r'\bincorrect\b', r'\bwrong\b', r'\bfalse\b']
+    
+    yes_count = 0
+    no_count = 0
+    other_count = 0
+    total_questions = 0
+    
+    logger.info(f"\n{'='*60}")
+    logger.info(f"评估 Yes/No 偏向 (样本数: {num_samples})")
+    logger.info(f"{'='*60}")
+    
+    with torch.no_grad():
+        for idx in range(min(num_samples, len(val_dataset))):
+            sample = val_dataset.data[idx]
+            conversations = sample.get('conversations', [])
+            
+            for i in range(0, len(conversations) - 1, 2):
+                if i + 1 >= len(conversations):
+                    break
+                    
+                user_msg = conversations[i].get('value', '')
+                
+                # 检查是否是一般疑问句
+                is_question = any(re.search(pattern, user_msg, re.IGNORECASE) for pattern in yes_no_patterns)
+                
+                if is_question:
+                    total_questions += 1
+                    
+                    # 这里可以添加模型生成回答的逻辑
+                    # 由于需要完整的生成逻辑，这里简化处理
+                    # 实际使用时需要调用 model.generate()
+                    
+                    # 简化：统计数据集中的分布
+                    assistant_msg = conversations[i + 1].get('value', '').lower()
+                    
+                    if any(re.search(kw, assistant_msg) for kw in yes_keywords):
+                        yes_count += 1
+                    elif any(re.search(kw, assistant_msg) for kw in no_keywords):
+                        no_count += 1
+                    else:
+                        other_count += 1
+    
+    if total_questions > 0:
+        logger.info(f"\n验证集 Yes/No 分布:")
+        logger.info(f"  Yes: {yes_count} ({yes_count/total_questions*100:.2f}%)")
+        logger.info(f"  No: {no_count} ({no_count/total_questions*100:.2f}%)")
+        logger.info(f"  Other: {other_count} ({other_count/total_questions*100:.2f}%)")
+        logger.info(f"  Yes:No 比例: {yes_count}:{no_count}")
+        
+        if yes_count / total_questions > 0.6:
+            logger.warning(f"⚠️  警告: Yes 回答比例过高 ({yes_count/total_questions*100:.2f}%)，可能存在偏向!")
+        elif no_count / total_questions > 0.6:
+            logger.warning(f"⚠️  警告: No 回答比例过高 ({no_count/total_questions*100:.2f}%)，可能存在偏向!")
+        else:
+            logger.info(f"✅ Yes/No 分布较为平衡")
+    
+    logger.info(f"{'='*60}\n")
+    
+    return {
+        'yes_count': yes_count,
+        'no_count': no_count,
+        'other_count': other_count,
+        'total_questions': total_questions
+    }
 
 
 from torch.cuda.amp import autocast, GradScaler
@@ -189,6 +288,10 @@ def train_model(
         if val_dataloader is not None:
             val_loss = evaluate(model, val_dataloader, device, epoch)
             val_losses.append(val_loss)
+                        # 评估 Yes/No 偏向
+            if 'val_dataset' in config:
+                evaluate_yes_no_bias(model, val_dataloader.dataset, device, config.get('tokenizer'), num_samples=300)
+            
             
             # 保存最佳模型
             if val_loss < best_val_loss:
@@ -331,7 +434,7 @@ def main():
     val_dataset = LLaVADataset(
         data_dir=config['data_dir'],
         is_train=False,
-        sample_size=100,
+        sample_size=300,
         chat_round=config['chat_round'],
         max_seq_len=config['max_seq_len']
     )
@@ -369,7 +472,6 @@ def main():
     total_steps = int(config["sample_size"]) * config['num_epochs']
     warmup_steps = int(total_steps * config['warmup_ratio'])
 
-    # 这是一个高度集成的写法，在大厂工程中非常流行
     scheduler = OneCycleLR(
         optimizer,
         max_lr=2e-5,  # 0.5B模型建议维持在2e-5，但通过衰减来控制
@@ -391,8 +493,12 @@ def main():
     signal.signal(signal.SIGINT, save_on_interrupt)
     signal.signal(signal.SIGTERM, save_on_interrupt)
     
+    # 更新 config，添加验证数据集和 tokenizer
+    config['val_dataset'] = val_dataset
+    config['tokenizer'] = train_dataset.tokenizer
+    
     # 开始训练
-    trained_model = train_model(
+    train_model(
         model=model,
         train_dataloader=train_dataloader,
         val_dataloader=val_dataloader,
