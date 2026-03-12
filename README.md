@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nano VLM is a lightweight multimodal vision-language model built upon the Qwen2.5 language model and CLIP vision encoder. It processes image and text inputs to enable capabilities such as image captioning and visual question answering.
+Nano VLM is a lightweight multimodal vision-language model built upon the Qwen2.5-0.5B-instruct language model and CLIP vision encoder. It processes image and text inputs to enable capabilities such as image captioning and visual question answering.
 
 ## Architecture
 
