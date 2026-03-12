@@ -1,105 +1,145 @@
-# Qwen VLM 模型
+# Nano VLM Model
 
-## 模型简介
+## Overview
 
-Qwen VLM 是一个基于 Qwen2.5 语言模型和 CLIP 视觉模型的多模态视觉-语言模型，能够处理图像和文本输入，实现图像描述、视觉问答等任务。
+Nano VLM is a lightweight multimodal vision-language model built upon the Qwen2.5 language model and CLIP vision encoder. It processes image and text inputs to enable capabilities such as image captioning and visual question answering.
 
-## 模型架构
+## Architecture
 
-### 核心组件
-- **语言模型**：Qwen2.5-0.5B-Instruct
-- **视觉编码器**：openai/clip-vit-base-patch16
-- **视觉-语言投影器**：线性投影网络，将视觉特征映射到语言模型的嵌入空间
+### Core Components
 
-### 技术特点
-- 支持多种设备（CUDA、MPS、CPU）
-- 实现了 LoRA 微调技术
-- 动态处理输入序列长度
-- 严格对齐 Qwen 的 ChatML 格式
-- 支持图像-文本多模态输入
+- **Language Model**: Qwen2.5-0.5B-Instruct
+- **Vision Encoder**: openai/clip-vit-base-patch16
+- **Vision-Language Projector**: Multi-layer perceptron (MLP) that maps visual features to the language model's embedding space
 
-## 安装依赖
+### Projector Architecture
+
+```
+CLIP Visual Features (768-dim) → Linear(768, 2048) → LayerNorm → GELU → Linear(2048, 896) → LayerNorm → LLM Embedding Space (896-dim)
+```
+
+### Key Features
+
+- Multi-device support (CUDA > MPS > CPU, auto-selected)
+- LoRA fine-tuning (r=64, lora_alpha=128)
+- Dynamic sequence length handling
+- Strict ChatML format compliance
+- Image-text multimodal input support
+- SDPA attention implementation
+
+## Installation
 
 ```bash
 pip install transformers torch pillow peft
 ```
 
-## 模型使用
+## Quick Start
 
-### 初始化模型
+### Model Initialization
 
 ```python
-from lab6-vlm.model import VLMModel
+from lab6_nano_vlm.model import VLMModel
+import torch
 
-# 初始化模型
+# Recommended: use bf16 or fp32 (Qwen2.5 can be unstable with fp16)
+target_dtype = torch.float32
+
 model = VLMModel(
     llm_name="Qwen/Qwen2.5-0.5B-Instruct",
     vision_name="openai/clip-vit-base-patch16",
-    train_mode="both"  # 可选: "both", "lora", "projector"
+    train_mode="both"  # Options: "both", "lora", "projector"
 )
 ```
 
-### 加载 LoRA 权重
+### Special Token Configuration
+
+The model uses `<image>` as the image placeholder. It must be added to the tokenizer as a special token:
 
 ```python
-# 加载预训练的 LoRA 权重
-lora_params = torch.load("lora_weights.pt")
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained(llm_name)
+tokenizer.add_tokens(["<image>"], special_tokens=True)
+image_token_id = tokenizer.convert_tokens_to_ids("<image>")
+```
+
+### Loading LoRA Weights
+
+```python
+# Load pretrained LoRA weights
+lora_params = torch.load("lora_weights.pt", weights_only=True)
 model.load_lora(lora_params)
 ```
 
-### 推理示例
+### Inference Example
 
 ```python
 from PIL import Image
 
-# 加载图像
+# Load image
 image = Image.open("example.jpg")
 
-# 构建提示
+# Construct prompt (must use ChatML format with <image> token)
 prompt = """
 <|im_start|>system
 You are a helpful assistant.
 <|im_end|>
 <|im_start|>user
 <image>
-请描述这张图片。
+Please describe this image.
 <|im_end|>
 <|im_start|>assistant
 """
 
-# 生成回答
+# Generate response
 response = model.answer(image, prompt, max_new_tokens=128)
 print(response)
 ```
 
-## 模型训练
+## Training
 
-### 训练配置
+### Training Modes
 
-模型支持三种训练模式：
-- `both`：同时训练投影器和语言模型（使用 LoRA）
-- `lora`：仅训练语言模型（使用 LoRA）
-- `projector`：仅训练投影器
+| Mode | Description |
+|------|-------------|
+| `both` | Train both projector and language model (with LoRA) |
+| `lora` | Train language model only (with LoRA) |
+| `projector` | Train projector only |
 
-### 训练示例
+### Training Command
 
 ```bash
-# 训练命令示例
-python3 train.py --sample_size 10000 --batch_size 2 --llm_name Qwen/Qwen2.5-0.5B-Instruct --num_epochs 3 --projector_init_file projector_init.pt --chat_round 2 --max_seq_len 768 --train_mode lora
+python train.py \
+    --sample_size 10000 \
+    --batch_size 2 \
+    --llm_name Qwen/Qwen2.5-0.5B-Instruct \
+    --num_epochs 3 \
+    --projector_init_file projector_init.pt \
+    --chat_round 2 \
+    --max_seq_len 768 \
+    --train_mode lora
 ```
 
-## 技术细节
+### LoRA Configuration
 
-### 视觉特征处理
+- **Rank (r)**: 64
+- **Alpha**: 128
+- **Target Modules**: q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj
+- **Dropout**: 0.05
 
-1. 使用 CLIP 视觉模型提取图像特征
-2. 通过投影器将视觉特征映射到语言模型的嵌入空间
-3. 在输入序列中找到 `<image>` 标记的位置
-4. 将视觉特征插入到对应位置，替换 `<image>` 标记
+## Technical Details
 
-### 输入输出示例
+### Visual Feature Processing Pipeline
 
-#### 输入
+1. **Visual Encoding**: Extract image features using CLIP vision encoder, output dimension `[B, 577, 768]`
+2. **Feature Projection**: Map visual features to LLM embedding space via projector, discard first CLS token to obtain `[B, 576, 768]`
+3. **Token Replacement**: Locate `<image>` token position in input sequence and insert visual features in place of this token
+4. **Dynamic Padding**: Pad sequences to the longest sequence in current batch for computational efficiency
+
+### Input/Output Example
+
+#### Input
+
 ```python
 image = Image.open("cat.jpg")
 prompt = """
@@ -108,34 +148,48 @@ You are a helpful assistant.
 <|im_end|>
 <|im_start|>user
 <image>
-这是什么动物？
+What animal is this?
 <|im_end|>
 <|im_start|>assistant
 """
 ```
 
-#### 输出
+#### Output
+
 ```
 <|im_start|>assistant
-这是一个猫。
+This is a cat.
 <|im_end|>
 ```
 
+## Important Notes
 
+1. **Device Selection**: Model automatically selects available device (CUDA > MPS > CPU)
+2. **Data Type**: Use `bf16` or `fp32` (Qwen2.5 can be unstable with `fp16`)
+3. **Input Format**: Must use ChatML format with `<image>` token
+4. **Batch Processing**: Supports batch processing, but input sequence lengths should be consistent
+5. **Special Token**: Must add `<image>` as special token to tokenizer before use
 
-## 注意事项
+## Performance Optimization
 
-1. **设备选择**：模型会自动选择可用的设备（CUDA > MPS > CPU）
-2. **数据类型**：建议使用 `bf16` 或 `fp32`，Qwen2.5 在 `fp16` 下有时不稳定
-3. **输入格式**：必须使用 ChatML 格式，并包含 `<image>` 标记
-4. **批量处理**：模型支持批量处理，但需要确保输入序列长度一致
+- SDPA attention implementation for improved computational efficiency
+- Dynamic padding to reduce computational overhead
+- LoRA fine-tuning to reduce trainable parameter count
+- Vision encoder and LLM base parameters frozen; only projector or LoRA parameters are trained
 
-## 性能优化
+## Project Structure
 
-- 使用 `sdpa` 注意力实现，提高计算效率
-- 采用动态 Padding，减少计算开销
-- 支持 LoRA 微调，减少可训练参数数量
+```
+lab6-nano-vlm/
+├── model.py          # VLM model definition
+├── train.py          # Training script
+├── data_set.py       # Dataset processing
+├── eval.py           # Evaluation script
+├── api.py            # API interface
+├── README.md         # Project documentation
+└── resume/           # Resume related files
+```
 
-## 许可证
+## License
 
-本项目基于 MIT 许可证开源。
+This project is licensed under the MIT License.
