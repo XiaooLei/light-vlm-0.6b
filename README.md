@@ -4,6 +4,27 @@
 
 Nano VLM is a lightweight multimodal vision-language model built upon the Qwen2.5-0.5B-instruct language model and CLIP vision encoder. It processes image and text inputs to enable capabilities such as image captioning and visual question answering.
 
+
+## Demonstration
+
+Below are some examples demonstrating the model's capabilities on various vision-language tasks.
+
+### Image Captioning
+
+| | |
+|---|---|
+| **Image** | ![Kitchen Scene](http://images.cocodataset.org/val2017/000000397133.jpg) |
+| **Prompt** | 详细描述一下图片内容 |
+| **Response** | 这张图片展示了一位穿着黑色西装、戴着墨镜的男子正在使用一把剪刀。他看起来非常专注，似乎在进行某种工作或活动。\n\n从照片中我们可以看到他的双手紧握着剪刀，并且他在用它来切割一些东西或者物体。这可能是一个裁缝的工作台或者是某个需要精细加工的物品。\n\n此外，在背景上可以看到一个垃圾桶和几个工具箱，这些都可能是用来存放材料或其他工作的设备。\n\n整体来看，这张图片描绘 |
+
+| | |
+|---|---|
+| **Image** | ![Birthday Scene](http://images.cocodataset.org/val2017/000000001000.jpg) |
+| **Prompt** | 描述一下这个图片 |
+| **Response** | 这个图片展示了一群孩子在阳光明媚的天气中，聚集在一起庆祝他们的生日。孩子们穿着鲜艳的衣服和帽子，脸上洋溢着快乐的笑容。\n\n画面中的主角是一位小男孩，他站在一个大圆桌旁，周围坐着他的父母、老师和其他家长。他们围坐在桌子旁边，享受着美食，并且互相分享彼此的故事和笑声。\n\n其他的孩子们则在一旁玩耍，有的正在画画或做手工制作，而另一些人则是阅读书籍或者玩游戏。整个 |
+
+
+
 ## Architecture
 
 ### Core Components
@@ -271,24 +292,6 @@ This is a cat.
 4. **Batch Processing**: Supports batch processing, but input sequence lengths should be consistent
 5. **Special Token**: Must add `<image>` as special token to tokenizer before use
 
-
-## Demonstration
-
-Below are some examples demonstrating the model's capabilities on various vision-language tasks.
-
-### Image Captioning
-
-| | |
-|---|---|
-| **Image** | ![Kitchen Scene](http://images.cocodataset.org/val2017/000000397133.jpg) |
-| **Prompt** | 详细描述一下图片内容 |
-| **Response** | 这张图片展示了一位穿着黑色西装、戴着墨镜的男子正在使用一把剪刀。他看起来非常专注，似乎在进行某种工作或活动。\n\n从照片中我们可以看到他的双手紧握着剪刀，并且他在用它来切割一些东西或者物体。这可能是一个裁缝的工作台或者是某个需要精细加工的物品。\n\n此外，在背景上可以看到一个垃圾桶和几个工具箱，这些都可能是用来存放材料或其他工作的设备。\n\n整体来看，这张图片描绘 |
-
-| | |
-|---|---|
-| **Image** | ![Birthday Scene](http://images.cocodataset.org/val2017/000000001000.jpg) |
-| **Prompt** | 描述一下这个图片 |
-| **Response** | 这个图片展示了一群孩子在阳光明媚的天气中，聚集在一起庆祝他们的生日。孩子们穿着鲜艳的衣服和帽子，脸上洋溢着快乐的笑容。\n\n画面中的主角是一位小男孩，他站在一个大圆桌旁，周围坐着他的父母、老师和其他家长。他们围坐在桌子旁边，享受着美食，并且互相分享彼此的故事和笑声。\n\n其他的孩子们则在一旁玩耍，有的正在画画或做手工制作，而另一些人则是阅读书籍或者玩游戏。整个 |
 
 ## License
 
