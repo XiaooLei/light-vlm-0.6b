@@ -14,7 +14,7 @@ import traceback
 import requests
 import uvicorn
 from pydantic import BaseModel, Field
-from model import VLMMode
+from model import VLMModel
 
 app = FastAPI(
     title="VLM API",
