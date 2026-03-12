@@ -190,6 +190,39 @@ lab6-nano-vlm/
 └── resume/           # Resume related files
 ```
 
+## Demonstration
+
+Below are some examples demonstrating the model's capabilities on various vision-language tasks.
+
+### Image Captioning
+
+| | |
+|---|---|
+| **Image** | ![Kitchen Scene](http://images.cocodataset.org/val2017/000000397133.jpg) |
+| **Prompt** | `<|im_start|>user\n<image>\n详细描述一下图片内容\n<|im_end|>\n<|im_start|>assistant\n` |
+| **Response** | The image depicts a kitchen scene where a man wearing a chef's uniform is cutting vegetables with a knife. Next to him is a small bowl containing water and seasonings. |
+
+| | |
+|---|---|
+| **Image** | ![Birthday Scene](http://images.cocodataset.org/val2017/000000001000.jpg) |
+| **Prompt** | `<|im_start|>user\n<image>\n描述一下这个图片\n<|im_end|>\n<|im_start|>assistant\n` |
+| **Response** | The image shows a group of children gathering together to celebrate a birthday on a sunny day. The children are wearing colorful clothes and hats, with happy smiles on their faces. |
+
+### Visual Question Answering
+
+| | |
+|---|---|
+| **Image** | ![Person Image](http://images.cocodataset.org/val2017/000000397133.jpg) |
+| **Prompt** | `<|im_start|>user\n<image>\nIs there a person in the image?\n<|im_end|>\n<|im_start|>assistant\n` |
+| **Response** | Yes, there is a person in the image. There is a man wearing a chef's uniform in the kitchen. |
+| **Expected** | Yes |
+
+| | |
+|---|---|
+| **Image** | ![Birthday Image](http://images.cocodataset.org/val2017/000000001000.jpg) |
+| **Prompt** | `<|im_start|>user\n<image>\nHow many people are in this image?\n<|im_end|>\n<|im_start|>assistant\n` |
+| **Response** | There appear to be multiple people in the image, including several children and what looks like adults, possibly around 8-10 people in total. |
+
 ## License
 
 This project is licensed under the MIT License.
