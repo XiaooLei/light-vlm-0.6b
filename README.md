@@ -1,8 +1,8 @@
-# Light VLM Model
+# light-vlm-0.6b
 
 [![Hugging Face Model](https://img.shields.io/badge/Hugging%20Face-light--vlm--0.6b-yellow)](https://huggingface.co/brightxiaolei/light-vlm-0.6b)
 
-Light VLM is a lightweight multimodal vision-language model built upon the Qwen2.5-0.5B-instruct language model and CLIP vision encoder. It processes image and text inputs to enable capabilities such as image captioning and visual question answering.
+light-vlm-0.6b is a lightweight multimodal vision-language model built upon the Qwen2.5-0.5B-instruct language model and CLIP vision encoder. It processes image and text inputs to enable capabilities such as image captioning and visual question answering.
 
 
 ## Demonstration
