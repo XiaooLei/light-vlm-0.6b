@@ -3,9 +3,6 @@ from transformers import CLIPVisionModel, CLIPImageProcessor
 import torch
 from PIL import Image
 from peft import LoraConfig, get_peft_model
-import os
-
-
 
 # 建议使用 bf16 或 fp32，Qwen2.5 在 fp16 下有时不稳定
 target_dtype = torch.float32 
@@ -49,8 +46,9 @@ class VLMModel(torch.nn.Module):
 
         self.llm_hidden_dim = self.language_model.config.hidden_size
         
+        vision_dim = self.vision_encoder.config.hidden_size
         self.projector = torch.nn.Sequential(
-            torch.nn.Linear(768, 2048),
+            torch.nn.Linear(vision_dim, 2048),
             torch.nn.LayerNorm(2048),
             torch.nn.GELU(),
             torch.nn.Linear(2048, self.llm_hidden_dim),
