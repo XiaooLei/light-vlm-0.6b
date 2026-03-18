@@ -25,6 +25,49 @@ Below are some examples demonstrating the model's capabilities on various vision
 
 
 
+## Evaluation Results
+
+### MMBench (DEV_EN) Evaluation Results
+
+**Overall Accuracy: 21.91%**
+
+#### By Category
+
+| Category | Correct | Total | Accuracy |
+|----------|---------|-------|----------|
+| action_recognition | 15 | 54 | 27.78% |
+| attribute_comparison | 8 | 44 | 18.18% |
+| attribute_recognition | 16 | 74 | 21.62% |
+| celebrity_recognition | 9 | 99 | 9.09% |
+| function_reasoning | 35 | 79 | 44.30% |
+| future_prediction | 6 | 40 | 15.00% |
+| identity_reasoning | 22 | 45 | 48.89% |
+| image_emotion | 15 | 50 | 30.00% |
+| image_quality | 0 | 53 | 0.00% |
+| image_scene | 49 | 104 | 47.12% |
+| image_style | 7 | 53 | 13.21% |
+| image_topic | 14 | 36 | 38.89% |
+| nature_relation | 6 | 48 | 12.50% |
+| object_localization | 4 | 81 | 4.94% |
+| ocr | 5 | 39 | 12.82% |
+| physical_property_reasoning | 20 | 75 | 26.67% |
+| physical_relation | 2 | 24 | 8.33% |
+| social_relation | 8 | 43 | 18.60% |
+| spatial_relationship | 0 | 45 | 0.00% |
+| structuralized_imagetext_understanding | 14 | 78 | 17.95% |
+
+#### By L2-Category
+
+| L2-Category | Correct | Total | Accuracy |
+|-------------|---------|-------|----------|
+| attribute_reasoning | 77 | 199 | 38.69% |
+| coarse_perception | 85 | 296 | 28.72% |
+| finegrained_perception (cross-instance) | 23 | 143 | 16.08% |
+| finegrained_perception (instance-level) | 34 | 293 | 11.60% |
+| logic_reasoning | 20 | 118 | 16.95% |
+| relation_reasoning | 16 | 115 | 13.91% |
+
+
 ## Architecture
 
 ### Core Components
@@ -291,48 +334,6 @@ This is a cat.
 3. **Input Format**: Must use ChatML format with `<image>` token
 4. **Batch Processing**: Supports batch processing, but input sequence lengths should be consistent
 5. **Special Token**: Must add `<image>` as special token to tokenizer before use
-
-## Evaluation Results
-
-### MMBench (DEV_EN) Evaluation Results
-
-**Overall Accuracy: 21.91%**
-
-#### By Category
-
-| Category | Correct | Total | Accuracy |
-|----------|---------|-------|----------|
-| action_recognition | 15 | 54 | 27.78% |
-| attribute_comparison | 8 | 44 | 18.18% |
-| attribute_recognition | 16 | 74 | 21.62% |
-| celebrity_recognition | 9 | 99 | 9.09% |
-| function_reasoning | 35 | 79 | 44.30% |
-| future_prediction | 6 | 40 | 15.00% |
-| identity_reasoning | 22 | 45 | 48.89% |
-| image_emotion | 15 | 50 | 30.00% |
-| image_quality | 0 | 53 | 0.00% |
-| image_scene | 49 | 104 | 47.12% |
-| image_style | 7 | 53 | 13.21% |
-| image_topic | 14 | 36 | 38.89% |
-| nature_relation | 6 | 48 | 12.50% |
-| object_localization | 4 | 81 | 4.94% |
-| ocr | 5 | 39 | 12.82% |
-| physical_property_reasoning | 20 | 75 | 26.67% |
-| physical_relation | 2 | 24 | 8.33% |
-| social_relation | 8 | 43 | 18.60% |
-| spatial_relationship | 0 | 45 | 0.00% |
-| structuralized_imagetext_understanding | 14 | 78 | 17.95% |
-
-#### By L2-Category
-
-| L2-Category | Correct | Total | Accuracy |
-|-------------|---------|-------|----------|
-| attribute_reasoning | 77 | 199 | 38.69% |
-| coarse_perception | 85 | 296 | 28.72% |
-| finegrained_perception (cross-instance) | 23 | 143 | 16.08% |
-| finegrained_perception (instance-level) | 34 | 293 | 11.60% |
-| logic_reasoning | 20 | 118 | 16.95% |
-| relation_reasoning | 16 | 115 | 13.91% |
 
 ## License
 
