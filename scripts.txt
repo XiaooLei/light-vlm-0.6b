@@ -8,8 +8,6 @@ python train.py \
     --max_seq_len 768 \
     --train_mode lora
 
-
-
 export HF_ENDPOINT=https://hf-mirror.com
 python train.py \
     --vision_name google/siglip-base-patch16-224 \
@@ -17,3 +15,18 @@ python train.py \
     --batch_size 2 \
     --num_epochs 3 \
     --train_mode pretrain
+
+
+nohup python train.py \
+    --vision_name google/siglip2-base-patch16-224 \
+    --llm_name Qwen/Qwen2.5-0.5B-Instruct \
+    --sample_size 150000 \
+    --batch_size 6 \
+    --num_epochs 3 \
+    --train_mode pretrain \
+    --chat_round 1 \
+    --max_seq_len 368 \
+    > train.log 2>&1 &
+
+
+python train.py  --vision_name google/siglip2-base-patch16-224      --llm_name Qwen/Qwen2.5-0.5B-Instruct   --sample_size 150000  --batch_size 8     --num_epochs 3     --train_mode pretrain --chat_round 2 --max_seq_len 368

@@ -82,5 +82,22 @@ def run_test():
     print("\n" + "="*30)
     print("测试完成！")
 
+def img_test():
+    from data_set import LLaVADataset
+
+    dataset = LLaVADataset(
+        data_dir="./llava_data",
+        vision_name="google/siglip-base-patch16-224",
+        llm_name="Qwen/Qwen2.5-0.5B-Instruct",
+        sample_size=10
+    )
+    dataset.load()
+
+# 测试第一张图片
+sample = dataset[0]
+print(f"pixel_values type: {type(sample['pixel_values'])}")
+print(f"pixel_values shape: {sample['pixel_values'].shape if sample['pixel_values'] is not None else 'None'}")
+
+
 if __name__ == "__main__":
     run_test()

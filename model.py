@@ -1,5 +1,5 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from transformers import CLIPVisionModel, CLIPImageProcessor, AutoModel, AutoImageProcessor
+from transformers import CLIPVisionModel, CLIPImageProcessor, AutoImageProcessor, AutoModel
 import torch
 from PIL import Image
 from peft import LoraConfig, get_peft_model
@@ -42,8 +42,9 @@ class VLMModel(torch.nn.Module):
         if "siglip" in vision_name_lower:
             self.vision_encoder = AutoModel.from_pretrained(
                 vision_name,
-                torch_dtype=target_dtype,
-                device_map=self.device
+                dtype=target_dtype,
+                device_map=self.device,
+                attn_implementation="sdpa"
             )
             self.vision_processor = AutoImageProcessor.from_pretrained(vision_name)
         else:
@@ -62,10 +63,14 @@ class VLMModel(torch.nn.Module):
             vision_dim = vision_cfg.hidden_size
         elif hasattr(vision_cfg, 'embed_dim'):
             vision_dim = vision_cfg.embed_dim
-        elif hasattr(vision_cfg, 'vision_config') and hasattr(vision_cfg.vision_config, 'hidden_size'):
-            vision_dim = vision_cfg.vision_config.hidden_size
+        elif hasattr(vision_cfg, 'vision_config'):
+            vision_cfg_inner = getattr(vision_cfg, 'vision_config')
+            if hasattr(vision_cfg_inner, 'hidden_size'):
+                vision_dim = vision_cfg_inner.hidden_size
+            else:
+                vision_dim = vision_cfg_inner.get('hidden_size', 768)
         else:
-            raise ValueError(f"Cannot determine vision encoder hidden size from config: {vision_cfg}")
+            vision_dim = 768  # 默认值
         self.projector = torch.nn.Sequential(
             torch.nn.Linear(vision_dim, 2048),
             torch.nn.LayerNorm(2048),
@@ -114,9 +119,36 @@ class VLMModel(torch.nn.Module):
 
     
     def forward(self, input_ids, pixel_values, labels=None):
-        visual_outputs = self.vision_encoder(pixel_values)
-        # [B, 576, 768] -> [B, 576, LLM_DIM]
-        image_features = self.projector(visual_outputs.last_hidden_state[:, 1:, :])
+        # 调试
+        # print(f"forward called with pixel_values type: {type(pixel_values)}")
+        # if pixel_values is not None:
+        #     print(f"forward pixel_values shape: {pixel_values.shape}, dtype: {pixel_values.dtype}")
+        # else:
+        #     print("forward pixel_values is None!")
+        #     print(f"input_ids type: {type(input_ids)}, shape: {input_ids.shape if input_ids is not None else 'None'}")
+        
+        # 检查 pixel_values 是否为 None
+        if pixel_values is None:
+            raise ValueError("pixel_values is None!")
+        
+        # 确保 pixel_values 是正确的 dtype 和 device
+        if pixel_values.dtype != torch.float32:
+            pixel_outputs = pixel_values.to(dtype=torch.float32)
+        else:
+            pixel_outputs = pixel_values
+        if not pixel_outputs.is_cuda and torch.cuda.is_available():
+            pixel_outputs = pixel_outputs.to(self.device)
+        
+        # 获取视觉特征
+        vision_name_lower = self.vision_encoder.name_or_path.lower() if hasattr(self.vision_encoder, 'name_or_path') else ""
+        if "siglip" in vision_name_lower:
+            vision_outputs = self.vision_encoder.vision_model(pixel_values=pixel_outputs)
+        elif hasattr(self.vision_encoder, 'vision_model'):
+            vision_outputs = self.vision_encoder.vision_model(pixel_values=pixel_outputs)
+        else:
+            vision_outputs = self.vision_encoder(pixel_values=pixel_outputs)
+        
+        image_features = self.projector(vision_outputs.last_hidden_state[:, 1:, :])
         inputs_embeds = self.language_model.get_input_embeddings()(input_ids)
 
         batch_size = input_ids.size(0)
@@ -179,7 +211,7 @@ class VLMModel(torch.nn.Module):
                 final_labels[i, :cur_len] = new_labels[i]
 
         # --- 临时调试代码修正 ---
-        if labels is not None and torch.rand(1).item() < 0.05:
+        if labels is not None and torch.rand(1).item() < 0.01:
             # 1. 正常的 Forward 已经拿到了 logits
             # 这里的 logits 维度是 [B, N, Vocabulary_Size]
             output = self.language_model(inputs_embeds=final_embeds, labels=final_labels if labels is not None else None,return_dict=True)
@@ -237,8 +269,17 @@ class VLMModel(torch.nn.Module):
         # 3. 准备图像特征
         pixel_values = self.vision_processor(images=image, return_tensors="pt").pixel_values
         pixel_values = pixel_values.to(device=self.device, dtype=target_dtype)
-        visual_outputs = self.vision_encoder(pixel_values)
-        image_features = self.projector(visual_outputs.last_hidden_state[:, 1:, :])
+        
+        # 获取视觉特征
+        vision_name_lower = self.vision_encoder.name_or_path.lower() if hasattr(self.vision_encoder, 'name_or_path') else ""
+        if "siglip" in vision_name_lower:
+            vision_outputs = self.vision_encoder.vision_model(pixel_values=pixel_values)
+        elif hasattr(self.vision_encoder, 'vision_model'):
+            vision_outputs = self.vision_encoder.vision_model(pixel_values=pixel_values)
+        else:
+            vision_outputs = self.vision_encoder(pixel_values=pixel_values)
+        
+        image_features = self.projector(vision_outputs.last_hidden_state[:, 1:, :])
 
         # 4. 拼接 Embeddings
         inputs_embeds = self.language_model.get_input_embeddings()(input_ids)

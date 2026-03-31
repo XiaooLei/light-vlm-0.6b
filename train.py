@@ -10,6 +10,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 os.environ['GIT_PAGER'] = 'cat'
+os.environ['PAGER'] = 'cat'
 
 from model import VLMModel
 from data_set import LLaVADataset, create_balanced_dataloader
@@ -56,7 +57,7 @@ def extract_model_name(model_name):
     return model_name
 
 
-def train_one_epoch(model, train_dataloader, optimizer, scheduler, device, epoch, grad_accum_steps=4):
+def train_one_epoch(model, train_dataloader, optimizer, scheduler, device, epoch, grad_accum_steps=4, writer=None):
 
     # 设备配置
     if torch.cuda.is_available():
@@ -89,17 +90,29 @@ def train_one_epoch(model, train_dataloader, optimizer, scheduler, device, epoch
     )
     
     for batch_idx, batch in progress_bar:
+        # 调试：检查 batch 内容
+        if batch_idx == 0:
+            print(f"batch keys: {batch.keys()}")
+            print(f"pixel_values type: {type(batch['pixel_values'])}")
+            if batch['pixel_values'] is not None:
+                print(f"pixel_values shape: {batch['pixel_values'].shape}")
+            else:
+                print("pixel_values is None!")
+        
         # 将数据搬运到设备
         input_ids = batch["input_ids"].to(device)
         pixel_values = batch["pixel_values"].to(device)
         labels = batch["labels"].to(device)
 
         # 1. 前向传播
-        # 直接计算，不使用 autocast 和 scaler
         outputs = model(input_ids=input_ids, pixel_values=pixel_values, labels=labels)
         
         # 2. 获取 Loss 并处理梯度累积
         loss = outputs.loss / grad_accum_steps
+        
+        # 每1000个batch记录一次训练 loss
+        if batch_idx % 1000 == 0:
+            writer.add_scalar('Loss/train_step', loss.item() * grad_accum_steps, epoch * num_batches + batch_idx)
         
         # 调试：检查 loss 是否有梯度链 (只需检查第一个 batch)
         if batch_idx == 0 and epoch == 1:
@@ -307,7 +320,7 @@ def train_model(
         
         # 训练
         train_loss = train_one_epoch(
-            model, train_dataloader, optimizer, scheduler, device, epoch
+            model, train_dataloader, optimizer, scheduler, device, epoch, writer=writer
         )
         train_losses.append(train_loss)
         
@@ -480,7 +493,9 @@ def main():
         is_train=True,
         sample_size=config['sample_size'],
         chat_round=config['chat_round'],
-        max_seq_len=config['max_seq_len']
+        max_seq_len=config['max_seq_len'],
+        vision_name=config['vision_name'],
+        llm_name=config['llm_name']
     )
     train_dataset.load()
     train_dataset.ensure_sample_data_exists(max_workers=1000)
@@ -490,7 +505,9 @@ def main():
         is_train=False,
         sample_size=300,
         chat_round=config['chat_round'],
-        max_seq_len=config['max_seq_len']
+        max_seq_len=config['max_seq_len'],
+        vision_name=config['vision_name'],
+        llm_name=config['llm_name']
     )
     val_dataset.load()
     
@@ -498,7 +515,7 @@ def main():
     train_dataloader = create_balanced_dataloader(
         train_dataset,
         batch_size=config['batch_size'],
-        num_workers=2,
+        num_workers=0,
         shuffle=True
     )
     
@@ -506,8 +523,8 @@ def main():
         val_dataset,
         batch_size=config['batch_size'],
         shuffle=False,
-        num_workers=2,
-        pin_memory=True
+        num_workers=0,
+        pin_memory=False
     )
     
     logger.info(f"Train batches per epoch: {len(train_dataloader)}")

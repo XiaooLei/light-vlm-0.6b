@@ -7,7 +7,7 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset, Sampler
 from PIL import Image
-from transformers import AutoTokenizer, CLIPImageProcessor
+from transformers import AutoTokenizer, CLIPImageProcessor, AutoImageProcessor
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 import random
@@ -45,6 +45,8 @@ class LLaVADataset(Dataset):
         self.images_dir = os.path.join(data_dir, "train2017")
         self.data = []
         self.chat_round = chat_round
+        self.vision_name = vision_name
+        self.llm_name = llm_name
         self.max_seq_len = max_seq_len
         
         # 初始化tokenizer和image processor
@@ -53,7 +55,12 @@ class LLaVADataset(Dataset):
         # 【必须添加这行】确保 Dataset 编码出来的 ID 和模型找的 ID 一致
         self.tokenizer.add_tokens(["<image>"], special_tokens=True)
 
-        self.image_processor = CLIPImageProcessor.from_pretrained(vision_name)
+        # 支持 CLIP 和 SigLIP 的 image processor
+        vision_name_lower = vision_name.lower()
+        if "siglip" in vision_name_lower:
+            self.image_processor = AutoImageProcessor.from_pretrained(vision_name)
+        else:
+            self.image_processor = CLIPImageProcessor.from_pretrained(vision_name)
         
 
 
@@ -109,15 +116,22 @@ class LLaVADataset(Dataset):
             # 尝试打开图片
             try:
                 image = Image.open(image_path).convert('RGB')
-                pixel_values = self.image_processor(images=image, return_tensors="pt").pixel_values.squeeze(0)
-                return pixel_values.to(torch.bfloat16)
+                processed = self.image_processor(images=image, return_tensors="pt")
+                if processed is None or processed.get('pixel_values') is None:
+                    logger.warning(f"Image processor 返回 None，使用默认图像: {image_path}")
+                    return torch.zeros(3, 224, 224, dtype=torch.float32)
+                pixel_values = processed.pixel_values.squeeze(0)
+                return pixel_values.to(torch.float32)
             except Exception as e:
                 # 如果图像无法打开（如损坏或格式不正确），返回零张量
                 logger.warning(f"无法打开图片 {image_path}: {e}")
-                return torch.zeros(3, 224, 224, dtype=torch.bfloat16)
+                return torch.zeros(3, 224, 224, dtype=torch.float32)
         else:
             # 如果图像路径不存在，返回零张量
-            return torch.zeros(3, 224, 224, dtype=torch.bfloat16)
+            return torch.zeros(3, 224, 224, dtype=torch.float32)
+        
+        # 兜底：确保一定返回有效张量
+        return torch.zeros(3, 224, 224, dtype=torch.float32)
     
     def _process_text(self, sample: Dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -496,10 +510,13 @@ def check_data_set():
     """
     logger.info("="*60)
     logger.info("开始统计模型训练上下文长度...")
-    logger.info("="*60)
+    def check_data_set(vision_name: str, llm_name: str):
+        logger.info(f"使用模型: {vision_name} 处理图像特征")
+        logger.info(f"使用模型: {llm_name} 处理文本")
+        logger.info("="*60)
     
     # 创建数据集加载器
-    dataset = LLaVADataset(sample_size=10000)  # 使用全部数据
+    dataset = LLaVADataset(sample_size=10000, vision_name=vision_name, llm_name=llm_name)  # 使用全部数据
     
     # 加载数据
     data = dataset.load()
@@ -636,11 +653,14 @@ def analyze_yes_no_bias(data_dir="./llava_data", sample_size=None, chat_round=2)
     """
     import re
     
+    logger.info(f"正在分析数据目录: {data_dir}")
+    logger.info(f"样本数量: {sample_size if sample_size else '全部'}")
+    logger.info(f"对话轮数: {chat_round}")
     logger.info("="*60)
     logger.info("开始分析一般疑问句回答分布...")
     logger.info("="*60)
     
-    dataset = LLaVADataset(data_dir=data_dir, sample_size=sample_size, chat_round=chat_round)
+    dataset = LLaVADataset(data_dir=data_dir, sample_size=sample_size, chat_round=chat_round, vision_name=vision_name, llm_name=llm_name)
     data = dataset.load()[:sample_size]
     
     total_samples = len(data)
