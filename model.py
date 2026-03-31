@@ -1,5 +1,5 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from transformers import CLIPVisionModel, CLIPImageProcessor
+from transformers import CLIPVisionModel, CLIPImageProcessor, AutoModel, AutoImageProcessor
 import torch
 from PIL import Image
 from peft import LoraConfig, get_peft_model
@@ -36,17 +36,36 @@ class VLMModel(torch.nn.Module):
         )
 
         self.language_model.resize_token_embeddings(len(self.tokenizer))
-
-        self.vision_encoder = CLIPVisionModel.from_pretrained(
-            vision_name,
-            dtype=target_dtype, 
-            device_map=self.device
-        )
-        self.vision_processor = CLIPImageProcessor.from_pretrained(vision_name)
+        
+        # 支持 CLIP 和 SigLIP
+        vision_name_lower = vision_name.lower()
+        if "siglip" in vision_name_lower:
+            self.vision_encoder = AutoModel.from_pretrained(
+                vision_name,
+                torch_dtype=target_dtype,
+                device_map=self.device
+            )
+            self.vision_processor = AutoImageProcessor.from_pretrained(vision_name)
+        else:
+            self.vision_encoder = CLIPVisionModel.from_pretrained(
+                vision_name,
+                dtype=target_dtype, 
+                device_map=self.device
+            )
+            self.vision_processor = CLIPImageProcessor.from_pretrained(vision_name)
 
         self.llm_hidden_dim = self.language_model.config.hidden_size
         
-        vision_dim = self.vision_encoder.config.hidden_size
+        # 支持 CLIP 和 SigLIP（hidden_size 属性名不同）
+        vision_cfg = self.vision_encoder.config
+        if hasattr(vision_cfg, 'hidden_size'):
+            vision_dim = vision_cfg.hidden_size
+        elif hasattr(vision_cfg, 'embed_dim'):
+            vision_dim = vision_cfg.embed_dim
+        elif hasattr(vision_cfg, 'vision_config') and hasattr(vision_cfg.vision_config, 'hidden_size'):
+            vision_dim = vision_cfg.vision_config.hidden_size
+        else:
+            raise ValueError(f"Cannot determine vision encoder hidden size from config: {vision_cfg}")
         self.projector = torch.nn.Sequential(
             torch.nn.Linear(vision_dim, 2048),
             torch.nn.LayerNorm(2048),

@@ -1,9 +1,15 @@
-torch>=2.6.0
+# HuggingFace 镜像配置: export HF_ENDPOINT=https://hf-mirror.com
+torch>=2.0.0
 transformers>=4.35.0
-tqdm
-Pillow
-requests
-datasets==2.14.0
-huggingface-hub
-accelerate
-numpy
+tqdm>=4.65.0
+Pillow>=9.0.0
+requests>=2.28.0
+datasets>=2.14.0
+huggingface-hub>=0.16.0
+accelerate>=0.20.0
+numpy>=1.24.0
+peft>=0.8.0
+fastapi>=0.100.0
+uvicorn>=0.22.0
+pydantic>=2.0.0
+tensorboard>=2.14.0

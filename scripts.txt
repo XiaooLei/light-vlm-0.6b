@@ -1,0 +1,19 @@
+python train.py \
+    --sample_size 60000 \
+    --batch_size 2 \
+    --llm_name Qwen/Qwen2.5-0.5B-Instruct \
+    --vision_name openai/clip-vit-large-patch14 \
+    --num_epochs 6 \
+    --chat_round 2 \
+    --max_seq_len 768 \
+    --train_mode lora
+
+
+
+export HF_ENDPOINT=https://hf-mirror.com
+python train.py \
+    --vision_name google/siglip-base-patch16-224 \
+    --llm_name Qwen/Qwen2.5-0.5B-Instruct \
+    --batch_size 2 \
+    --num_epochs 3 \
+    --train_mode pretrain

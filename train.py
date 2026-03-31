@@ -4,6 +4,13 @@ VLM 视觉语言模型训练脚本
 适配 LLaVA 格式数据集
 """
 
+from torch.utils.tensorboard import SummaryWriter
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import os
+os.environ['GIT_PAGER'] = 'cat'
+
 from model import VLMModel
 from data_set import LLaVADataset, create_balanced_dataloader
 from torch.utils.data import DataLoader
@@ -278,6 +285,13 @@ def train_model(
     train_losses = []
     val_losses = []
     
+    # TensorBoard 日志目录
+    tb_log_dir = os.path.join(checkpoint_dir, "runs")
+    os.makedirs(tb_log_dir, exist_ok=True)
+    writer = SummaryWriter(log_dir=tb_log_dir)
+    logger.info(f"TensorBoard log directory: {tb_log_dir}")
+    logger.info("Use 'tensorboard --logdir={}' to view".format(tb_log_dir))
+    
     logger.info("=" * 60)
     logger.info("Starting Training...")
     logger.info(f"Training samples: {len(train_dataloader.dataset)}")
@@ -297,10 +311,15 @@ def train_model(
         )
         train_losses.append(train_loss)
         
+        # 记录到 TensorBoard
+        writer.add_scalar('Loss/train', train_loss, epoch)
+        
         # 验证
         if val_dataloader is not None:
             val_loss = evaluate(model, val_dataloader, device, epoch)
             val_losses.append(val_loss)
+            writer.add_scalar('Loss/val', val_loss, epoch)
+            writer.add_scalar('Learning_Rate', scheduler.get_last_lr()[0], epoch)
                         # 评估 Yes/No 偏向
             if 'val_dataset' in config:
                 evaluate_yes_no_bias(model, val_dataloader.dataset, device, config.get('tokenizer'), num_samples=300)
@@ -338,6 +357,25 @@ def train_model(
     if val_losses:
         logger.info(f"Best Validation Loss: {best_val_loss:.4f}")
     logger.info(f"Checkpoints saved to: {checkpoint_dir}")
+    
+    # 保存 Loss 曲线图片
+    plt.figure(figsize=(10, 6))
+    epochs_range = range(1, len(train_losses) + 1)
+    plt.plot(epochs_range, train_losses, 'b-', label='Train Loss', marker='o')
+    if val_losses:
+        plt.plot(epochs_range, val_losses, 'r-', label='Val Loss', marker='s')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss')
+    plt.legend()
+    plt.grid(True)
+    loss_curve_path = os.path.join(checkpoint_dir, 'loss_curve.png')
+    plt.savefig(loss_curve_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    logger.info(f"Loss curve saved to: {loss_curve_path}")
+    
+    # 关闭 TensorBoard
+    writer.close()
     
     return model
 
@@ -445,7 +483,7 @@ def main():
         max_seq_len=config['max_seq_len']
     )
     train_dataset.load()
-    train_dataset.ensure_sample_data_exists()
+    train_dataset.ensure_sample_data_exists(max_workers=1000)
     
     val_dataset = LLaVADataset(
         data_dir=config['data_dir'],
